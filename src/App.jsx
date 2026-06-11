@@ -260,7 +260,6 @@ export default function App() {
       setNewFlavorId('');
       setNewFlavorPriceMedium('');
       setNewFlavorPriceLarge('');
-      fetchFlavors();
     } catch (err) {
       console.error("Failed to append new database flavor row:", err);
       showToast("Relational insert failure. The key ID might already exist.", "error");
