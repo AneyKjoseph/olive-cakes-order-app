@@ -25,7 +25,8 @@ import {
   Image as ImageIcon,
   X,
   User2Icon,
-  IndianRupee
+  IndianRupee,
+  Tag
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -76,6 +77,12 @@ export default function App() {
   const [totalAmount, setTotalAmount] = useState('');
   const [contactNo, setContactNo] = useState('');
   const [designDetails, setDesignDetails] = useState('');
+  // flavor params
+  const [newFlavorName, setNewFlavorName] = useState('');
+  const [newFlavorId, setNewFlavorId] = useState('');
+  const [newFlavorPriceMedium, setNewFlavorPriceMedium] = useState('');
+  const [newFlavorPriceLarge, setNewFlavorPriceLarge] = useState('');
+  const [isSavingFlavor, setIsSavingFlavor] = useState(false);
   
   // Image Storage Base64 parameters
   const [referenceImage, setReferenceImage] = useState(null);
@@ -208,6 +215,59 @@ export default function App() {
     };
   }, [isLiveConnection, supabase]);
 
+  const handleFlavorNameChange = (e) => {
+    const val = e.target.value;
+    setNewFlavorName(val);
+    const generatedSlug = val
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-_]/g, '')
+      .replace(/\s+/g, '_');
+    setNewFlavorId(generatedSlug);
+  };
+
+  // Insert a new flavor row to Supabase VITE_SUPABASE_SCHEMA.flavors
+  const handleAddFlavor = async (e) => {
+    e.preventDefault();
+    if (!newFlavorName.trim()) {
+      return showToast("Flavor Name required.", "error");
+    }
+
+    setIsSavingFlavor(true);
+    const payload = {
+      id: newFlavorId.trim(),
+      name: newFlavorName.trim(),
+      price_medium: Number(newFlavorPriceMedium) || 0,
+      price_large: Number(newFlavorPriceLarge) || 0
+    };
+
+    try {
+      if (isLiveConnection && supabase) {
+        const { error } = await supabase
+          .schema(cakeOrderSchema)
+          .from('flavors')
+          .insert([payload]);
+
+        if (error) throw error;
+      } else {
+        const updated = [...flavors, payload];
+        setFlavors(updated);
+        localStorage.setItem('local_cake_flavors', JSON.stringify(updated));
+      }
+
+      showToast(`🎉 Flavor "${newFlavorName}" added and synced!`);
+      setNewFlavorName('');
+      setNewFlavorId('');
+      setNewFlavorPriceMedium('');
+      setNewFlavorPriceLarge('');
+      fetchFlavors();
+    } catch (err) {
+      console.error("Failed to append new database flavor row:", err);
+      showToast("Relational insert failure. The key ID might already exist.", "error");
+    } finally {
+      setIsSavingFlavor(false);
+    }
+  };
 
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
@@ -494,6 +554,20 @@ export default function App() {
                   </span>
                 )}
               </button>
+
+              {isAdmin && (
+                <button
+                  onClick={() => setActiveTab('manage-flavors')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
+                    activeTab === 'manage-flavors'
+                      ? 'bg-gradient-to-r from-pink-600 to-rose-500 text-white shadow-sm'
+                      : 'text-pink-600 bg-pink-100 hover:bg-pink-200'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  Manage Flavors
+                </button>
+              )}
 
               {isAdmin && (
                 <button
@@ -1145,6 +1219,131 @@ export default function App() {
           </div>
         )}
 
+        {/* VIEW 3: MANAGE FLAVORS (ADMIN ONLY) */}
+        {activeTab === 'manage-flavors' && isAdmin && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fadeIn">
+            
+            {/* ADD FLAVOR FORM */}
+            <div className="lg:col-span-4 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
+              <div className="border-b border-rose-100 pb-3 mb-5">
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-pink-500" />
+                  Add New Flavor
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Define metadata and standard pricing columns.</p>
+              </div>
+
+              <form onSubmit={handleAddFlavor} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Flavor Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Pistachio Cardamom"
+                    value={newFlavorName}
+                    onChange={handleFlavorNameChange}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <IndianRupee className="w-3 h-3" />
+                      Medium Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 550"
+                      value={newFlavorPriceMedium}
+                      onChange={(e) => setNewFlavorPriceMedium(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <IndianRupee className="w-3 h-3" />
+                      Large Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 1000"
+                      value={newFlavorPriceLarge}
+                      onChange={(e) => setNewFlavorPriceLarge(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingFlavor}
+                  className="w-full mt-2 py-3 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+                >
+                  <Layers className="w-4 h-4" />
+                  {isSavingFlavor ? 'Saving...' : 'Save Flavor'}
+                </button>
+              </form>
+            </div>
+
+            {/* FLAVORS LIST TABLE */}
+            <div className="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
+              <div className="border-b border-rose-100 pb-3 mb-5 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-pink-500" />
+                    Available Flavors List ({flavors.length})
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">These directly populate the placing order drop-down menu.</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <th className="py-3 px-4">Flavor Name</th>
+                      <th className="py-3 px-4">Slug ID Key</th>
+                      <th className="py-3 px-4 text-right">Medium Price</th>
+                      <th className="py-3 px-4 text-right">Large Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {flavors.map((flv) => (
+                      <tr key={flv.id} className="hover:bg-slate-50/70 transition-colors text-sm">
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.name}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <code className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-mono">
+                            {flv.id}
+                          </code>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-semibold text-slate-700">
+                          {flv.price_medium ? `₹${flv.price_medium}` : '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-semibold text-slate-700">
+                          {flv.price_large ? `₹${flv.price_large}` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    {flavors.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="py-8 text-center text-slate-400 text-sm">
+                          No flavors added yet. Use the form on the left to add flavors!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        )}
+
       </main>
 
       <footer className="mt-16 border-t border-rose-100/60 bg-white/50 py-8 text-center text-xs text-slate-400">
@@ -1155,4 +1354,4 @@ export default function App() {
 
     </div>
   );
-}
+}  
