@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Cake, 
-  Calendar, 
-  Clock, 
-  DollarSign, 
-  Phone, 
-  FileText, 
-  LayoutDashboard, 
-  PlusCircle, 
-  Sparkles, 
-  CheckCircle2, 
-  AlertCircle, 
-  BarChart3, 
-  Layers, 
-  ChevronRight, 
-  TrendingUp, 
+import {
+  Cake,
+  Calendar,
+  Clock,
+  DollarSign,
+  Phone,
+  FileText,
+  LayoutDashboard,
+  PlusCircle,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  BarChart3,
+  Layers,
+  ChevronRight,
+  TrendingUp,
   Database,
   Coffee,
   Heart,
@@ -52,9 +52,9 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [flavors, setFlavors] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Dynamic Supabase client reference
-  
+
   const [isLiveConnection, setIsLiveConnection] = useState(true);
 
   // Admin Security session validation
@@ -83,15 +83,22 @@ export default function App() {
   const [newFlavorPriceMedium, setNewFlavorPriceMedium] = useState('');
   const [newFlavorPriceLarge, setNewFlavorPriceLarge] = useState('');
   const [isSavingFlavor, setIsSavingFlavor] = useState(false);
-  
+
   // Image Storage Base64 parameters
   const [referenceImage, setReferenceImage] = useState(null);
   const [isCompilingImage, setIsCompilingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef(null);
 
+  const [filterDate, setFilterDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+
+
   // Full Screen Lightbox parameters
   const [lightboxImage, setLightboxImage] = useState(null);
+
+  const handleResetToToday = () => {
+    setFilterDate(new Date().toLocaleDateString('en-CA'));
+  };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -127,7 +134,7 @@ export default function App() {
 
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
+
         // Output optimized base64
         const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         setReferenceImage(optimizedBase64);
@@ -140,10 +147,10 @@ export default function App() {
   };
 
 
-  
+
 
   // Dynamically load Supabase client script inside the browser to avoid bundling issues
-  
+
 
   // Sync data streams once database client is resolved
   useEffect(() => {
@@ -167,14 +174,14 @@ export default function App() {
           .schema(cakeOrderSchema)
           .from('orders')
           .select('*');
-        
+
         if (error) throw error;
         setOrders(data || []);
       } catch (error) {
         console.warn("SQL Fetch Error, defaulting to local simulation:", error);
         showToast("Database restricted. Operating in local simulation mode.", "error");
         setIsLiveConnection(false);
-        
+
         const localStored = localStorage.getItem('local_cake_orders');
         if (localStored) setOrders(JSON.parse(localStored));
       } finally {
@@ -278,7 +285,7 @@ export default function App() {
     if (orderType === 'Theme' && !designDetails.trim()) {
       return showToast("Please describe the design specifications for your Theme Cake.", "error");
     }
-   
+
     setIsSubmitting(true);
 
     const total = parseFloat(totalAmount) || 0;
@@ -295,7 +302,7 @@ export default function App() {
       advance_amount: Number(advanceAmount) || 0,
       balance_amount: finalBalance || 0,
       total_amount: Number(totalAmount) || 0,
-      customer_name:customerName,
+      customer_name: customerName,
       contact_no: contactNo.trim(),
       design_details: orderType === 'Theme' ? designDetails.trim() : '',
       image_data: orderType === 'Theme' ? referenceImage : null,
@@ -317,10 +324,10 @@ export default function App() {
         setOrders(backupList);
         localStorage.setItem('local_cake_orders', JSON.stringify(backupList));
       }
-      
+
       showToast("🎉 Cake order recorded & synced successfully!");
       resetFormInputs();
-      
+
       setTimeout(() => {
         setActiveTab('dashboard');
       }, 1000);
@@ -438,7 +445,7 @@ export default function App() {
   const analytics = useMemo(() => {
     const flavorCounts = {};
     flavors.forEach(f => { flavorCounts[f.id] = 0; });
-    
+
     orders.forEach(order => {
       const fId = order.flavor;
       if (flavorCounts[fId] !== undefined) {
@@ -455,26 +462,25 @@ export default function App() {
         name: meta ? meta.name : id,
         count: flavorCounts[id]
       };
-    }).sort((a,b) => b.count - a.count);
+    }).sort((a, b) => b.count - a.count);
 
-    const todayLocalStr = new Date().toLocaleDateString('en-CA');
-    
-    const todayOrders = orders.filter(order => {
+    // 1. Filter based on selected date
+    const selectedDateStr = filterDate;
+    const targetDateOrders = orders.filter(order => {
       if (!order.date_time) return false;
       const orderDateStr = order.date_time.split('T')[0];
-      return orderDateStr === todayLocalStr;
+      return orderDateStr === selectedDateStr;
     });
 
     // Sort order list chronological ascending
-    const todayOrdersSorted = [...todayOrders].sort((a, b) => {
+    const targetOrdersSorted = [...targetDateOrders].sort((a, b) => {
       const timeA = a.date_time.split('T')[1] || '';
       const timeB = b.date_time.split('T')[1] || '';
       return timeA.localeCompare(timeB);
     });
 
     const todayFlavorSizes = {};
-
-    todayOrdersSorted.forEach(order => {
+    targetOrdersSorted.forEach(order => {
       const flv = order.flavor;
       const qty = order.quantity;
 
@@ -494,18 +500,26 @@ export default function App() {
       };
     }).sort((a, b) => b.sizes.total - a.sizes.total);
 
+    // 2. Calculate actual today's counter strictly for the tab notification badge
+    const todayLocalStr = new Date().toLocaleDateString('en-CA');
+    const strictlyTodayCount = orders.filter(order => {
+      if (!order.date_time) return false;
+      return order.date_time.split('T')[0] === todayLocalStr;
+    }).length;
+
     return {
       totalAllTimeOrders: orders.length,
       flavorAllTimeSummary,
-      todayOrders: todayOrdersSorted,
+      todayOrders: targetOrdersSorted, // Renamed internally for compatibility but represents selected date
       todaySummaryData,
-      todayCount: todayOrders.length
+      todayCount: strictlyTodayCount,  // Strictly actual today's count for notification bubble
+      selectedDateCount: targetDateOrders.length
     };
-  }, [orders]);
+  }, [orders, flavors, filterDate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-pink-50 text-slate-800 font-sans">
-      
+
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-rose-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3">
@@ -516,11 +530,10 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             {/* Live Indicator Chip */}
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-              isLiveConnection 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${isLiveConnection
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-amber-50 text-amber-700 border border-amber-200'
-            }`}>
+              }`}>
               <Database className="w-3.5 h-3.5" />
               {isLiveConnection ? "Live Data" : "Local Data"}
             </span>
@@ -528,22 +541,20 @@ export default function App() {
             <nav className="flex bg-rose-50 p-1 rounded-xl border border-rose-100/60 items-center">
               <button
                 onClick={() => setActiveTab('order-form')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
-                  activeTab === 'order-form'
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${activeTab === 'order-form'
                     ? 'bg-white text-pink-600 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
-                }`}
+                  }`}
               >
                 <PlusCircle className="w-4 h-4" />
                 Place Order
               </button>
               <button
                 onClick={() => setActiveTab('dashboard')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 relative ${
-                  activeTab === 'dashboard'
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 relative ${activeTab === 'dashboard'
                     ? 'bg-white text-pink-600 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
-                }`}
+                  }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
@@ -557,11 +568,10 @@ export default function App() {
               {isAdmin && (
                 <button
                   onClick={() => setActiveTab('manage-flavors')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
-                    activeTab === 'manage-flavors'
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${activeTab === 'manage-flavors'
                       ? 'bg-gradient-to-r from-pink-600 to-rose-500 text-white shadow-sm'
                       : 'text-pink-600 bg-pink-100 hover:bg-pink-200'
-                  }`}
+                    }`}
                 >
                   <Layers className="w-4 h-4" />
                   Manage Flavors
@@ -585,11 +595,10 @@ export default function App() {
       {/* TOAST PANEL */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-          <div className={`p-4 rounded-xl shadow-lg flex items-center gap-3 border ${
-            toast.type === 'error' 
-              ? 'bg-rose-50 border-rose-200 text-rose-800' 
+          <div className={`p-4 rounded-xl shadow-lg flex items-center gap-3 border ${toast.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
               : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-          }`}>
+            }`}>
             {toast.type === 'error' ? <AlertCircle className="w-5 h-5 text-rose-600" /> : <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
             <span className="text-sm font-semibold">{toast.message}</span>
           </div>
@@ -598,20 +607,20 @@ export default function App() {
 
       {/* FULL PREVIEW LIGHTBOX */}
       {lightboxImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all"
           onClick={() => setLightboxImage(null)}
         >
           <div className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-            <button 
+            <button
               className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-800 p-2 rounded-full transition-all"
               onClick={() => setLightboxImage(null)}
             >
               <X className="w-5 h-5" />
             </button>
-            <img 
-              src={lightboxImage} 
-              alt="Design Specification Reference" 
+            <img
+              src={lightboxImage}
+              alt="Design Specification Reference"
               className="w-full max-h-[70vh] object-contain bg-slate-50"
             />
             <div className="p-5 border-t border-slate-100 bg-slate-50">
@@ -624,7 +633,7 @@ export default function App() {
 
       {/* VIEW LAYOUT PANEL */}
       <main className="max-w-6xl mx-auto px-4 py-8">
-        
+
         {/* VIEW 1: CAKE FORM */}
         {activeTab === 'order-form' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -639,7 +648,7 @@ export default function App() {
               </div>
 
               <form onSubmit={handleSubmitOrder} className="space-y-6">
-                
+
                 {/* 1. ORDER SELECTOR TYPE */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Order Type *</label>
@@ -650,22 +659,20 @@ export default function App() {
                         setOrderType('Regular');
                         setReferenceImage(null);
                       }}
-                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${
-                        orderType === 'Regular'
+                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${orderType === 'Regular'
                           ? 'bg-rose-50/50 border-pink-500 text-pink-700 ring-2 ring-pink-500/10'
                           : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       🍰 Regular Cake
                     </button>
                     <button
                       type="button"
                       onClick={() => setOrderType('Theme')}
-                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${
-                        orderType === 'Theme'
+                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${orderType === 'Theme'
                           ? 'bg-rose-50/50 border-pink-500 text-pink-700 ring-2 ring-pink-500/10'
                           : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       ✨ Theme/Designer Cake
                     </button>
@@ -675,19 +682,19 @@ export default function App() {
                 {/* 2. DATETIME & CONTACT */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-slate-400" />
-                    Customer Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder='Enter Customer Name'
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                  />
-                </div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                      Customer Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder='Enter Customer Name'
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -796,11 +803,11 @@ export default function App() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                         <div className="md:col-span-2">
-                          <input 
-                            type="file" 
-                            accept="image/*" 
+                          <input
+                            type="file"
+                            accept="image/*"
                             ref={fileInputRef}
-                            className="hidden" 
+                            className="hidden"
                             onChange={handlePhotoUpload}
                           />
                           <button
@@ -868,8 +875,8 @@ export default function App() {
                       step="0.01"
                       placeholder="0.00"
                       value={totalAmount}
-                      onChange={(e) => 
-                          setTotalAmount(e.target.value)
+                      onChange={(e) =>
+                        setTotalAmount(e.target.value)
                       }
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
                     />
@@ -891,14 +898,14 @@ export default function App() {
                     />
                   </div>
                   {(totalAmount !== '' && advanceAmount !== '') && (
-                      <div className="p-4 bg-slate-50 rounded-lg">
-                        {balanceAmount > 0 ? (
-                          <p className="text-red-600 font-bold">Balance Due: ₹{balanceAmount.toFixed(0)}</p>
-                        ) : (
-                          <p className="text-emerald-600 font-bold">Full amount paid!</p>
-                        )}
-                      </div>
-                    )}
+                    <div className="p-4 bg-slate-50 rounded-lg">
+                      {balanceAmount > 0 ? (
+                        <p className="text-red-600 font-bold">Balance Due: ₹{balanceAmount.toFixed(0)}</p>
+                      ) : (
+                        <p className="text-emerald-600 font-bold">Full amount paid!</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -918,7 +925,7 @@ export default function App() {
         {/* VIEW 2: KITCHEN TELEMETRY DASHBOARD */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8 animate-fadeIn">
-            
+
             {!isAdmin ? (
               <div className="max-w-md mx-auto my-12 bg-white rounded-3xl shadow-xl border border-rose-100 p-8 text-center">
                 <div className="w-16 h-16 bg-rose-50 text-pink-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100">
@@ -961,134 +968,80 @@ export default function App() {
                 </form>
               </div>
             ) : (
-              
+
               // ACTIVE METRIC METALS
               <div className="space-y-8">
-                
-                {/* METRICS HEADER */}
+
                 <div className="bg-white/80 backdrop-blur rounded-3xl border border-rose-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                  <div>
+                  <div className="space-y-2">
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                       <LayoutDashboard className="w-6 h-6 text-pink-500" />
-                      Active Orders
+                      Orders Dashboard
                     </h2>
+                    <p className="text-xs text-slate-400">Viewing schedule summary logs.</p>
                   </div>
 
-                  <div className="flex gap-4">
-                    <div className="bg-rose-100/50 border border-rose-100/80 px-4 py-2.5 rounded-2xl text-center">
-                      <span className="block text-xs text-rose-500 font-bold uppercase tracking-wider">Today's Orders</span>
-                      <span className="text-2xl font-black text-rose-600">{analytics.todayCount}</span>
+                  <div className="flex flex-wrap gap-4 items-end">
+                    {/* Interactive Date Selector Container */}
+                    <div className="bg-pink-50/50 border border-pink-100/80 px-4 py-2.5 rounded-2xl flex flex-col gap-1.5 shadow-sm">
+                      <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        Select Delivery Date
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={filterDate}
+                          onChange={(e) => setFilterDate(e.target.value)}
+                          className="px-3 py-1 bg-white border border-rose-200 text-slate-700 text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400"
+                        />
+                        {/* Only show "Today" shortcut if we aren't currently viewing today */}
+                        {filterDate !== new Date().toLocaleDateString('en-CA') && (
+                          <button
+                            type="button"
+                            onClick={handleResetToToday}
+                            className="bg-pink-100 hover:bg-pink-200 text-pink-700 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors"
+                          >
+                            Today
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="bg-amber-100/50 border border-amber-100/80 px-4 py-2.5 rounded-2xl text-center">
-                      <span className="block text-xs text-amber-600 font-bold uppercase tracking-wider">All-Time Orders</span>
+
+                    {/* Metric Boxes */}
+                    <div className="bg-rose-100/50 border border-rose-100/80 px-4 py-2.5 rounded-2xl text-center min-w-[100px]">
+                      <span className="block text-[10px] text-rose-500 font-bold uppercase tracking-wider">Target Date Orders</span>
+                      <span className="text-2xl font-black text-rose-600">{analytics.selectedDateCount}</span>
+                    </div>
+                    <div className="bg-amber-100/50 border border-amber-100/80 px-4 py-2.5 rounded-2xl text-center min-w-[100px]">
+                      <span className="block text-[10px] text-amber-600 font-bold uppercase tracking-wider font-semibold">All-Time Orders</span>
                       <span className="text-2xl font-black text-amber-700">{analytics.totalAllTimeOrders}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* GRAPHIC COLUMNS */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  
-                  {/* GROUP BY FLAVOR ALL-TIME METRICS */}
-                  <div className="bg-white p-6 sm:p-8 rounded-3xl border border-rose-100/60 shadow-md">
-                    <div className="flex items-center gap-2 mb-6 border-b border-rose-50 pb-3">
-                      <TrendingUp className="w-5 h-5 text-pink-500" />
-                      <h3 className="font-bold text-slate-800 text-lg">Total Orders Grouped by Flavor</h3>
-                    </div>
-
-                    {analytics.totalAllTimeOrders === 0 ? (
-                      <div className="py-12 text-center text-slate-400 text-sm">
-                        No active Orders.
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {analytics.flavorAllTimeSummary.map((item) => {
-                          const pct = analytics.totalAllTimeOrders > 0 
-                            ? Math.round((item.count / analytics.totalAllTimeOrders) * 100) 
-                            : 0;
-
-                          return (
-                            <div key={item.id} className="space-y-1">
-                              <div className="flex justify-between text-sm">
-                                <span className="font-semibold text-slate-700">{item.name}</span>
-                                <span className="text-slate-400 font-bold">{item.count} orders ({pct}%)</span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                                <div 
-                                  className="bg-gradient-to-r from-pink-500 to-rose-400 h-full rounded-full transition-all duration-500"
-                                  style={{ width: `${pct}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* PORTION & SIZE GROUPED BREAKDOWN BY ACTIVE FLAVOR TODAY */}
-                  <div className="bg-white p-6 sm:p-8 rounded-3xl border border-rose-100/60 shadow-md">
-                    <div className="flex items-center gap-2 mb-6 border-b border-rose-50 pb-3">
-                      <BarChart3 className="w-5 h-5 text-amber-500" />
-                      <h3 className="font-bold text-slate-800 text-lg">Today's Orders & Size Breakdown per Flavor</h3>
-                    </div>
-
-                    {analytics.todayCount === 0 ? (
-                      <div className="py-12 text-center text-slate-400 text-sm">
-                        No orders registered for today ({new Date().toLocaleDateString('en-CA')}).
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {analytics.todaySummaryData.map((item) => (
-                          <div key={item.id} className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-bold text-slate-800 text-sm">{item.name}</span>
-                              <span className="bg-pink-100 text-pink-700 text-xs font-extrabold px-2 py-0.5 rounded-full">
-                                {item.sizes.total} order(s)
-                              </span>
-                            </div>
-                            
-                            {/* Size badge pills */}
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {item.sizes.medium > 0 && (
-                                <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-indigo-100">
-                                  Medium: {item.sizes.medium}
-                                </span>
-                              )}
-                              {item.sizes.large > 0 && (
-                                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-100">
-                                  Large: {item.sizes.large}
-                                </span>
-                              )}
-                              {item.sizes.custom > 0 && (
-                                <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-amber-100">
-                                  Custom: {item.sizes.custom}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                </div>
 
                 {/* PREP SCHEDULE TABLE */}
-                <div className="bg-white rounded-3xl border border-rose-100/60 shadow-lg overflow-hidden">
-                  <div className="p-6 bg-slate-50/60 border-b border-rose-100/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                      <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                        <Clock className="w-5 h-5 text-pink-500" />
-                        Today's Orders
-                      </h3>
+                  <div className="bg-white rounded-3xl border border-rose-100/60 shadow-lg overflow-hidden">
+                    <div className="p-6 bg-slate-50/60 border-b border-rose-100/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                          <Clock className="w-5 h-5 text-pink-500" />
+                          Scheduled Cakes for {new Date(filterDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </h3>
+                      </div>
                     </div>
-                  </div>
 
-                  {analytics.todayCount === 0 ? (
-                    <div className="py-16 text-center text-slate-400 text-sm">
-                      No cake orders scheduled for today.
-                    </div>
+                    {analytics.selectedDateCount === 0 ? (
+                      <div className="py-16 text-center text-slate-400 text-sm flex flex-col justify-center items-center gap-2">
+                        <span>No cake orders scheduled for {filterDate}.</span>
+                        <button
+                          onClick={handleResetToToday}
+                          className="text-pink-600 font-bold hover:underline text-xs"
+                        >
+                          Reset back to today
+                        </button>
+                      </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
@@ -1107,7 +1060,7 @@ export default function App() {
                           {analytics.todayOrders.map((order, i) => {
                             const flavorName = flavors.find(f => f.id === order.flavor)?.name || order.flavor;
                             const qtyLabel = QUANTITIES.find(q => q.id === order.quantity)?.name.split(' (')[0] || order.quantity;
-                            
+
                             const [datePart, timePart] = order.date_time.split('T');
                             const [h24, m] = timePart.split(':');
 
@@ -1119,7 +1072,7 @@ export default function App() {
 
                             return (
                               <tr key={order.id || i} className="hover:bg-slate-50/70 transition-colors text-sm">
-                                
+
                                 <td className="py-4 px-6 font-bold text-pink-600 whitespace-nowrap">
                                   <span className="inline-flex items-center gap-1.5 bg-pink-50 px-2.5 py-1 rounded-lg">
                                     <Clock className="w-3.5 h-3.5" />
@@ -1131,11 +1084,10 @@ export default function App() {
                                   <div>
                                     <div className="font-semibold text-slate-800 flex items-center gap-1.5">
                                       {flavorName}
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                        order.order_type === 'Theme' 
-                                          ? 'bg-amber-100 text-amber-800' 
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${order.order_type === 'Theme'
+                                          ? 'bg-amber-100 text-amber-800'
                                           : 'bg-indigo-100 text-indigo-800'
-                                      }`}>
+                                        }`}>
                                         {order.order_type}
                                       </span>
                                     </div>
@@ -1159,7 +1111,7 @@ export default function App() {
                                           <span className="font-semibold text-pink-700 text-[10px] not-italic block uppercase">Theme Directives:</span>
                                           {order.design_details || "No specifications provided"}
                                         </div>
-                                        
+
                                         {/* DATABASE IMAGE MINI PREVIEW IN PREP PIPELINE */}
                                         {order.image_data && (
                                           <button
@@ -1192,7 +1144,7 @@ export default function App() {
                                 <td className="py-4 px-6 text-right whitespace-nowrap">
                                   <div className="font-mono text-xs">
                                     ₹{Number(order.total_amount).toFixed(2)}
-                                   
+
                                   </div>
                                 </td>
 
@@ -1205,11 +1157,60 @@ export default function App() {
 
                               </tr>
                             );
-                          })} 
+                          })}
                         </tbody>
                       </table>
                     </div>
                   )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
+                  {/* PORTION & SIZE GROUPED BREAKDOWN BY ACTIVE FLAVOR TODAY */}
+                  <div className="bg-white p-6 sm:p-8 rounded-3xl border border-rose-100/60 shadow-md">
+                    <div className="flex items-center gap-2 mb-6 border-b border-rose-50 pb-3">
+                      <BarChart3 className="w-5 h-5 text-amber-500" />
+                      <h3 className="font-bold text-slate-800 text-lg">Today's Orders & Size Breakdown per Flavor</h3>
+                    </div>
+
+                    {analytics.todayCount === 0 ? (
+                      <div className="py-12 text-center text-slate-400 text-sm">
+                        No orders registered for today ({new Date().toLocaleDateString('en-CA')}).
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {analytics.todaySummaryData.map((item) => (
+                          <div key={item.id} className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-slate-800 text-sm">{item.name}</span>
+                              <span className="bg-pink-100 text-pink-700 text-xs font-extrabold px-2 py-0.5 rounded-full">
+                                {item.sizes.total} order(s)
+                              </span>
+                            </div>
+
+                            {/* Size badge pills */}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {item.sizes.medium > 0 && (
+                                <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-indigo-100">
+                                  Medium: {item.sizes.medium}
+                                </span>
+                              )}
+                              {item.sizes.large > 0 && (
+                                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-100">
+                                  Large: {item.sizes.large}
+                                </span>
+                              )}
+                              {item.sizes.custom > 0 && (
+                                <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-amber-100">
+                                  Custom: {item.sizes.custom}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
 
               </div>
@@ -1221,7 +1222,7 @@ export default function App() {
         {/* VIEW 3: MANAGE FLAVORS (ADMIN ONLY) */}
         {activeTab === 'manage-flavors' && isAdmin && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fadeIn">
-            
+
             {/* ADD FLAVOR FORM */}
             <div className="lg:col-span-4 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
               <div className="border-b border-rose-100 pb-3 mb-5">
