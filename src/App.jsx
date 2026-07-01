@@ -1237,9 +1237,9 @@ export default function App() {
                                   </span>
                                 </td>
 
-                                <td className="py-4 px-6">
+                                <td className="py-4 px-6 whitespace-nowrap">
                                   <div>
-                                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                                    <div className="font-semibold text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
                                       {flavorName}
                                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${order.order_type === 'Theme'
                                           ? 'bg-amber-100 text-amber-800'
