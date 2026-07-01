@@ -127,106 +127,58 @@ export default function App() {
 
 
   const handlePrintOnlyTable = (id) => {
-    const tableElement = document.getElementById(id);
-    if (!tableElement) {
-      showToast("Schedule table not found to print.", "error");
-      return;
+  const tableElement = document.getElementById(id);
+  if (!tableElement) {
+    showToast("Schedule table not found to print.", "error");
+    return;
+  }
+
+  const iframe = document.createElement('iframe');
+  // Make it visible to the system but off-screen
+  iframe.style.position = 'absolute';
+  iframe.style.left = '-9999px';
+  iframe.style.top = '0px';
+  iframe.style.width = '100vw'; 
+  iframe.style.height = '100vh';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`
+    <html>
+      <head>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+          /* Your existing styles here */
+          body { padding: 24px; }
+          table { width: 100% !important; border-collapse: collapse !important; }
+        </style>
+      </head>
+      <body>
+        ${tableElement.outerHTML}
+      </body>
+    </html>
+  `);
+  doc.close();
+
+  // FIX: Wait for the script to load and images/styles to render
+  // Using an interval/check is safer than a hardcoded timeout
+  const printWhenReady = () => {
+    if (iframe.contentWindow.document.readyState === 'complete') {
+      // Small delay to ensure Tailwind has processed the DOM
+      setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        // Remove after a longer delay to ensure the dialog opened
+        setTimeout(() => document.body.removeChild(iframe), 1000);
+      }, 500);
+    } else {
+      setTimeout(printWhenReady, 100);
     }
-
-    // Create custom invisible iframe
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    
-    // Inject clean high-fidelity formatting styles & Tailwind classes inside the sandbox
-    doc.open();
-    doc.write(`
-      <html>
-        <head>
-          <title>Olive Cakes Schedule - ${filterDate}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style>
-            body {
-              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-              padding: 24px;
-              background-color: #ffffff;
-              color: #1e293b;
-            }
-            /* High-fidelity layout corrections for tables on physical paper */
-            table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-              margin-top: 16px;
-            }
-            th, td {
-              border: 1px solid #e2e8f0 !important;
-              padding: 10px 14px !important;
-              font-size: 14px !important;
-              text-align: left !important;
-              word-break: break-word !important;
-            }
-            th {
-              background-color: #f8fafc !important;
-              color: #475569 !important;
-              font-weight: 700 !important;
-              text-transform: uppercase !important;
-              font-size: 14px !important;
-              letter-spacing: 0.05em !important;
-            }
-            .text-right {
-              text-align: right !important;
-            }
-            .font-mono {
-              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
-            }
-            /* Hidden utilities for interactive buttons/components inside print content */
-            .no-print {
-              display: none !important;
-            }
-            @media print {
-              tr {
-                page-break-inside: avoid !important;
-                page-break-after: auto !important;
-              }
-              thead {
-                display: table-header-group !important;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="flex items-center justify-between border-b border-rose-100 pb-4 mb-4">
-            <div>
-              <h2 class="text-xl font-bold text-pink-600">Olive Cakes</h2>
-              <p class="text-xs text-slate-500 mt-1">
-                Scheduled Orders Summary • ${new Date(filterDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-            <div class="text-right text-xs text-slate-400">
-              Generated: ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          </div>
-          
-          <div class="overflow-x-auto">
-            ${tableElement.outerHTML}
-          </div>
-        </body>
-      </html>
-    `);
-    doc.close();
-
-    // Trigger printed preview after elements render completely inside iframe
-    setTimeout(() => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-      document.body.removeChild(iframe);
-    }, 550);
   };
+
+  printWhenReady();
+};
 
 
   const handlePhotoUpload = (e) => {
