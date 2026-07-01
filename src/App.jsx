@@ -26,7 +26,8 @@ import {
   X,
   User2Icon,
   IndianRupee,
-  Tag
+  Tag,
+  Printer
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -42,6 +43,11 @@ const QUANTITIES = [
   { id: 'medium', name: 'Medium' },
   { id: 'large', name: 'Large' },
   { id: 'custom', name: 'Add Quantity in Kg' }
+];
+
+const TARGET_TYPE = [
+  { id: 'display', name: 'Display' },
+  { id: 'fill', name: 'Fill' }
 ];
 
 
@@ -84,6 +90,14 @@ export default function App() {
   const [newFlavorPriceLarge, setNewFlavorPriceLarge] = useState('');
   const [isSavingFlavor, setIsSavingFlavor] = useState(false);
 
+  const [flavorNameForTarget, setFlavorNameForTarget] = useState('');
+  const [kgForTarget, setKgForTarget] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [countForTarget, setCountForTarget] = useState('');
+  const [typeForTarget, setTypeForTarget] = useState('');
+  const [isSavingTarget, setIsSavingTarget] = useState(false);
+  const [targets, setTargets] = useState([]);
+
   // Image Storage Base64 parameters
   const [referenceImage, setReferenceImage] = useState(null);
   const [isCompilingImage, setIsCompilingImage] = useState(false);
@@ -110,6 +124,109 @@ export default function App() {
     const paid = parseFloat(advanceAmount) || 0;
     return total - paid;
   }, [totalAmount, advanceAmount]);
+
+
+  const handlePrintOnlyTable = (id) => {
+    const tableElement = document.getElementById(id);
+    if (!tableElement) {
+      showToast("Schedule table not found to print.", "error");
+      return;
+    }
+
+    // Create custom invisible iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    
+    // Inject clean high-fidelity formatting styles & Tailwind classes inside the sandbox
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Olive Cakes Schedule - ${filterDate}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            body {
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              padding: 24px;
+              background-color: #ffffff;
+              color: #1e293b;
+            }
+            /* High-fidelity layout corrections for tables on physical paper */
+            table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              margin-top: 16px;
+            }
+            th, td {
+              border: 1px solid #e2e8f0 !important;
+              padding: 10px 14px !important;
+              font-size: 14px !important;
+              text-align: left !important;
+              word-break: break-word !important;
+            }
+            th {
+              background-color: #f8fafc !important;
+              color: #475569 !important;
+              font-weight: 700 !important;
+              text-transform: uppercase !important;
+              font-size: 14px !important;
+              letter-spacing: 0.05em !important;
+            }
+            .text-right {
+              text-align: right !important;
+            }
+            .font-mono {
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+            }
+            /* Hidden utilities for interactive buttons/components inside print content */
+            .no-print {
+              display: none !important;
+            }
+            @media print {
+              tr {
+                page-break-inside: avoid !important;
+                page-break-after: auto !important;
+              }
+              thead {
+                display: table-header-group !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="flex items-center justify-between border-b border-rose-100 pb-4 mb-4">
+            <div>
+              <h2 class="text-xl font-bold text-pink-600">Olive Cakes</h2>
+              <p class="text-xs text-slate-500 mt-1">
+                Scheduled Orders Summary • ${new Date(filterDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
+            <div class="text-right text-xs text-slate-400">
+              Generated: ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          </div>
+          
+          <div class="overflow-x-auto">
+            ${tableElement.outerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // Trigger printed preview after elements render completely inside iframe
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      document.body.removeChild(iframe);
+    }, 550);
+  };
 
 
   const handlePhotoUpload = (e) => {
@@ -231,6 +348,25 @@ export default function App() {
       .replace(/[^a-z0-9\s-_]/g, '')
       .replace(/\s+/g, '_');
     setNewFlavorId(generatedSlug);
+  };
+
+  const createIdGenerator = () => {
+  let id = 1; 
+  return () => id++;
+};
+
+  const handleTarget = (e) => {
+    e.preventDefault();
+  
+    const target = {
+      id: createIdGenerator(),
+      flavor: flavorNameForTarget.trim(),
+      kg: kgForTarget.trim(),
+      type: typeForTarget.trim(),
+      remarks: remarks,
+      count: Number(countForTarget) || 0
+    };
+    setTargets([...targets, target]);
   };
 
   // Insert a new flavor row to Supabase VITE_SUPABASE_SCHEMA.flavors
@@ -575,6 +711,18 @@ export default function App() {
                 >
                   <Layers className="w-4 h-4" />
                   Manage Flavors
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => setActiveTab('cake-count')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${activeTab === 'cake-count'
+                      ? 'bg-gradient-to-r from-pink-600 to-rose-500 text-white shadow-sm'
+                      : 'text-pink-600 bg-pink-100 hover:bg-pink-200'
+                    }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  Cake Target
                 </button>
               )}
 
@@ -1030,7 +1178,17 @@ export default function App() {
                           Scheduled Cakes for {new Date(filterDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </h3>
                       </div>
+                      {/* Action Button: Print to PDF */}
+                      <button
+                        onClick={() => handlePrintOnlyTable('printable-kitchen-table')}
+                        className="no-print bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-semibold py-2 px-4 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 text-xs self-end sm:self-auto"
+                      >
+                        <Printer className="w-4 h-4" />
+                        Print to PDF
+                      </button>
                     </div>
+
+
 
                     {analytics.selectedDateCount === 0 ? (
                       <div className="py-16 text-center text-slate-400 text-sm flex flex-col justify-center items-center gap-2">
@@ -1044,16 +1202,15 @@ export default function App() {
                       </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
+                      <table className="w-full text-left border-collapse" id="printable-kitchen-table">
                         <thead>
                           <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                            <th className="py-4 px-6">Due Time</th>
+                            <th className="py-2 px-4">Due Time</th>
                             <th className="py-4 px-6">Cake details</th>
                             <th className="py-4 px-6">Writing</th>
                             <th className="py-4 px-6">Customer Name</th>
                             <th className="py-4 px-6">Contact Phone</th>
-                            <th className="py-4 px-6 text-right">Total</th>
-                            <th className="py-4 px-6 text-right">Amount (Paid / Due)</th>
+                            <th className="py-4 px-6 text-right">Amount (Total/ Paid / Due)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1073,7 +1230,7 @@ export default function App() {
                             return (
                               <tr key={order.id || i} className="hover:bg-slate-50/70 transition-colors text-sm">
 
-                                <td className="py-4 px-6 font-bold text-pink-600 whitespace-nowrap">
+                                <td className="py-2 px-4 font-bold text-pink-600 whitespace-nowrap">
                                   <span className="inline-flex items-center gap-1.5 bg-pink-50 px-2.5 py-1 rounded-lg">
                                     <Clock className="w-3.5 h-3.5" />
                                     {orderTime}
@@ -1141,15 +1298,11 @@ export default function App() {
                                     {order.contact_no}
                                   </a>
                                 </td>
-                                <td className="py-4 px-6 text-right whitespace-nowrap">
-                                  <div className="font-mono text-xs">
-                                    ₹{Number(order.total_amount).toFixed(2)}
-
-                                  </div>
-                                </td>
+                            
 
                                 <td className="py-4 px-6 text-right whitespace-nowrap">
                                   <div className="font-mono text-xs">
+                                    <div className="font-mono text-xs">Total: ₹{Number(order.total_amount).toFixed(2)}</div>
                                     <div className="text-emerald-600 font-semibold">Adv: ₹{Number(order.advance_amount).toFixed(2)}</div>
                                     <div className="text-slate-400">Due: ₹{Number(order.balance_amount).toFixed(2)}</div>
                                   </div>
@@ -1330,6 +1483,166 @@ export default function App() {
                       </tr>
                     ))}
                     {flavors.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="py-8 text-center text-slate-400 text-sm">
+                          No flavors added yet. Use the form on the left to add flavors!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW 3: MANAGE FLAVORS (ADMIN ONLY) */}
+        {activeTab === 'cake-count' && isAdmin && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fadeIn">
+
+            {/* ADD FLAVOR FORM */}
+            <div className="lg:col-span-4 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
+              <div className="border-b border-rose-100 pb-3 mb-5">
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-pink-500" />
+                  Add Target Cakes List
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Add cakes to be completed in this session.</p>
+              </div>
+
+              <form onSubmit={handleTarget} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Flavor Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. White Forest"
+                    value={flavorNameForTarget}
+                    onChange={(e) => setFlavorNameForTarget(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      Kg
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter in Kgs"
+                      value={kgForTarget}
+                      onChange={(e) => setKgForTarget(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      Count
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Enter count"
+                      value={countForTarget}
+                      onChange={(e) => setCountForTarget(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Select Type
+                    </label>
+                    <select
+                      required
+                      value={typeForTarget}
+                      onChange={(e) => setTypeForTarget(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 bg-white"
+                    >
+                      <option value="" disabled hidden>-- Select an option --</option>
+                      {TARGET_TYPE.map(q => (
+                        <option key={q.id} value={q.id}>{q.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      Remarks
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Remarks if any"
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingTarget}
+                  className="w-full mt-2 py-3 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+                >
+                  <Layers className="w-4 h-4" />
+                  {isSavingTarget ? 'Saving...' : 'Save Target'}
+                </button>
+              </form>
+            </div>
+
+            {/* FLAVORS LIST TABLE */}
+            <div className="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
+              <div className="border-b border-rose-100 pb-3 mb-5 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-pink-500" />
+                    Targets For Session ({targets.length})
+                  </h3>
+                </div>
+                <button
+                        onClick={() => handlePrintOnlyTable('target-table')}
+                        className="no-print bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-semibold py-2 px-4 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 text-xs self-end sm:self-auto"
+                      >
+                        <Printer className="w-4 h-4" />
+                        Print to PDF
+                      </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" id="target-table" >
+                  <thead>
+                    <tr className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <th className="py-3 px-4">Flavor Name</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Kg</th>
+                      <th className="py-3 px-4">Count</th>
+                      <th className="py-3 px-4">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {targets.map((flv) => (
+                      <tr key={flv.id} className="hover:bg-slate-50/70 transition-colors text-sm">
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.flavor}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.type}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.kg}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.count}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {flv.remarks}
+                        </td>
+                        
+                      </tr>
+                    ))}
+                    {targets.length === 0 && (
                       <tr>
                         <td colSpan="5" className="py-8 text-center text-slate-400 text-sm">
                           No flavors added yet. Use the form on the left to add flavors!
