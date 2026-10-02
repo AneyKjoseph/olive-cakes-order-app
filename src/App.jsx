@@ -30,6 +30,13 @@ import {
   Printer
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import { OrderForm } from './components/OrderForm';
+import { DashboardView } from './components/DashboardView';
+import { FlavorManager } from './components/FlavorManager';
+import { CakeTargetManager } from './components/CakeTargetManager';
+import { AdminAuthCard } from './components/AdminAuthCard';
+import { OverviewStrip } from './features/dashboard/OverviewStrip';
+import { InfoChip } from './features/shared/InfoChip';
 
 // =========================================================
 // SUPABASE CLIENT CONFIGURATION
@@ -55,6 +62,7 @@ const ADMIN_PASSCODE = import.meta.env.VITE_ADMIN_PASSWORD;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('order-form');
+  const [previousTab, setPreviousTab] = useState('order-form');
   const [orders, setOrders] = useState([]);
   const [flavors, setFlavors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +78,7 @@ export default function App() {
 
   // Toast System banner
   const [toast, setToast] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // Form Parameters
   const [orderType, setOrderType] = useState('Regular');
@@ -105,13 +114,47 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   const [filterDate, setFilterDate] = useState(() => new Date().toLocaleDateString('en-CA'));
-
+  const [editingOrderId, setEditingOrderId] = useState(null);
 
   // Full Screen Lightbox parameters
   const [lightboxImage, setLightboxImage] = useState(null);
 
   const handleResetToToday = () => {
     setFilterDate(new Date().toLocaleDateString('en-CA'));
+  };
+
+  const handleTabChange = (nextTab) => {
+    if (nextTab === activeTab) return;
+    setPreviousTab(activeTab);
+    setActiveTab(nextTab);
+  };
+
+  const handleGoBack = () => {
+    if (previousTab && previousTab !== activeTab) {
+      setActiveTab(previousTab);
+      setPreviousTab(activeTab);
+    } else {
+      setActiveTab('order-form');
+    }
+  };
+
+  const populateOrderForEdit = (order) => {
+    setEditingOrderId(order.id ?? null);
+    setOrderType(order.order_type || 'Regular');
+    setDateTime(order.date_time || '');
+    setFlavor(order.flavor || '');
+    setQuantity(order.quantity || 'medium');
+    setCustomQtyDetails(order.custom_qty_details || '');
+    setWishes(order.wishes || '');
+    setCustomerName(order.customer_name || '');
+    setAdvanceAmount(String(order.advance_amount ?? ''));
+    setTotalAmount(String(order.total_amount ?? ''));
+    setContactNo(order.contact_no || '');
+    setDesignDetails(order.design_details || '');
+    setReferenceImage(order.image_data || null);
+    setPreviousTab(activeTab);
+    setActiveTab('order-form');
+    showToast('Editing selected order. Update and save changes.');
   };
 
   const showToast = (message, type = 'success') => {
@@ -363,15 +406,24 @@ export default function App() {
     }
   };
 
+  const validateOrderForm = () => {
+    if (!dateTime) return "Please select Order date and time.";
+    if (!flavor) return "Please select a flavor.";
+    if (!contactNo) return "Please input customer contact number.";
+    if (!customerName) return "Please input customer name.";
+    if (quantity === 'custom' && !customQtyDetails.trim()) return "Please describe the custom cake quantity details.";
+    if (orderType === 'Theme' && !designDetails.trim()) return "Please describe the design specifications for your Theme Cake.";
+    if (!totalAmount || Number(totalAmount) <= 0) return "Please enter a valid total amount.";
+    return null;
+  };
+
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
 
-    if (!dateTime) return showToast("Please select Order date and time.", "error");
-    if (!flavor) return showToast("Please select a flavor.", "error");
-    if (!contactNo) return showToast("Please input customer contact number.", "error");
-    if (!customerName) return showToast("Please input customer name.", "error");
-    if (orderType === 'Theme' && !designDetails.trim()) {
-      return showToast("Please describe the design specifications for your Theme Cake.", "error");
+    const validationMessage = validateOrderForm();
+    if (validationMessage) {
+      showToast(validationMessage, 'error');
+      return;
     }
 
     setIsSubmitting(true);
@@ -398,30 +450,50 @@ export default function App() {
     };
 
     try {
-      if (isLiveConnection && supabase) {
-        // Insert clean rows directly to hosted cloud PostgreSQL
-        const { error } = await supabase
-          .schema(cakeOrderSchema)
-          .from('orders')
-          .insert([orderPayload]);
+      if (editingOrderId !== null && editingOrderId !== undefined) {
+        const updatedOrders = orders.map(order =>
+          order.id === editingOrderId ? { ...order, ...orderPayload } : order
+        );
 
-        if (error) throw error;
+        if (isLiveConnection && supabase) {
+          const { error } = await supabase
+            .schema(cakeOrderSchema)
+            .from('orders')
+            .update(orderPayload)
+            .eq('id', editingOrderId);
+
+          if (error) throw error;
+        }
+
+        setOrders(updatedOrders);
+        localStorage.setItem('local_cake_orders', JSON.stringify(updatedOrders));
+        showToast('🎉 Order details updated successfully!');
       } else {
-        // Safe mock local storage backup fallback
         const backupList = [...orders, { id: crypto.randomUUID(), ...orderPayload }];
+
+        if (isLiveConnection && supabase) {
+          const { error } = await supabase
+            .schema(cakeOrderSchema)
+            .from('orders')
+            .insert([orderPayload]);
+
+          if (error) throw error;
+        }
+
         setOrders(backupList);
         localStorage.setItem('local_cake_orders', JSON.stringify(backupList));
+        showToast('🎉 Cake order recorded & synced successfully!');
       }
 
-      showToast("🎉 Cake order recorded & synced successfully!");
       resetFormInputs();
 
+      setPreviousTab(activeTab);
       setTimeout(() => {
         setActiveTab('dashboard');
-      }, 1000);
+      }, 500);
 
     } catch (err) {
-      console.error("PostgreSQL Insert Failed:", err);
+      console.error("Order save failed:", err);
       showToast("Relational write failed. Check connection or tables.", "error");
     } finally {
       setIsSubmitting(false);
@@ -429,6 +501,7 @@ export default function App() {
   };
 
   const resetFormInputs = () => {
+    setEditingOrderId(null);
     setOrderType('Regular');
     setDateTime('');
     setFlavor('');
@@ -437,9 +510,61 @@ export default function App() {
     setWishes('');
     setCustomerName('');
     setAdvanceAmount('');
+    setTotalAmount('');
     setContactNo('');
     setDesignDetails('');
     setReferenceImage(null);
+  };
+
+  const handleCancelEdit = () => {
+    resetFormInputs();
+    setPreviousTab(activeTab);
+    setActiveTab('dashboard');
+    showToast('Edit cancelled and returned to dashboard.');
+  };
+
+  const handleDeleteOrder = (orderId) => {
+    if (!orderId) return;
+    const orderToDelete = orders.find(order => order.id === orderId);
+    if (!orderToDelete) return;
+
+    setDeleteConfirm({
+      orderId,
+      customerName: orderToDelete.customer_name || 'this customer'
+    });
+  };
+
+  const confirmDeleteOrder = async () => {
+    if (!deleteConfirm?.orderId) return;
+
+    const { orderId } = deleteConfirm;
+    setDeleteConfirm(null);
+
+    try {
+      const remainingOrders = orders.filter(order => order.id !== orderId);
+
+      if (isLiveConnection && supabase) {
+        const { error } = await supabase
+          .schema(cakeOrderSchema)
+          .from('orders')
+          .delete()
+          .eq('id', orderId);
+
+        if (error) throw error;
+      }
+
+      setOrders(remainingOrders);
+      localStorage.setItem('local_cake_orders', JSON.stringify(remainingOrders));
+
+      if (editingOrderId === orderId) {
+        resetFormInputs();
+      }
+
+      showToast('Order deleted successfully.');
+    } catch (err) {
+      console.error('Delete failed:', err);
+      showToast('Could not delete the order.', 'error');
+    }
   };
 
   const handleSeedMockData = async () => {
@@ -530,6 +655,8 @@ export default function App() {
     showToast("Admin dashboard locked.");
   };
 
+  const dashboardSummary = useMemo(() => ({}), [orders]);
+
   const analytics = useMemo(() => {
     const flavorCounts = {};
     flavors.forEach(f => { flavorCounts[f.id] = 0; });
@@ -579,7 +706,7 @@ export default function App() {
       todayFlavorSizes[flv].total += 1;
     });
 
-    const todaySummaryData = Object.keys(todayFlavorSizes).map(flvId => {
+    const selectedDateSummaryData = Object.keys(todayFlavorSizes).map(flvId => {
       const meta = flavors.find(f => f.id === flvId);
       return {
         id: flvId,
@@ -599,7 +726,8 @@ export default function App() {
       totalAllTimeOrders: orders.length,
       flavorAllTimeSummary,
       todayOrders: targetOrdersSorted, // Renamed internally for compatibility but represents selected date
-      todaySummaryData,
+      todaySummaryData: selectedDateSummaryData,
+      selectedDateSummaryData,
       todayCount: strictlyTodayCount,  // Strictly actual today's count for notification bubble
       selectedDateCount: targetDateOrders.length
     };
@@ -609,14 +737,14 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-pink-50 text-slate-800 font-sans">
 
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-rose-100 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-white-50 text-pink-600 rounded-2xl shadow-inner">
-              <img src="/header-image.png" className="w-55 h-15" />
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
+          <div className="flex items-center justify-center lg:justify-start w-full lg:w-auto">
+            <div className="p-2.5 bg-white-50 text-pink-600 rounded-2xl shadow-inner w-full max-w-[220px]">
+              <img src="/header-image.png" className="w-full h-auto object-contain" alt="Olive Cakes logo" />
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
             {/* Live Indicator Chip */}
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${isLiveConnection
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -626,10 +754,20 @@ export default function App() {
               {isLiveConnection ? "Live Data" : "Local Data"}
             </span>
 
-            <nav className="flex bg-rose-50 p-1 rounded-xl border border-rose-100/60 items-center">
+            <nav className="flex flex-wrap justify-center bg-rose-50 p-1 rounded-xl border border-rose-100/60 items-center gap-1 w-full sm:w-auto">
+              {activeTab !== 'order-form' && (
+                <button
+                  type="button"
+                  onClick={handleGoBack}
+                  className="flex items-center gap-2 px-3 py-2 mr-2 rounded-lg font-medium text-sm text-slate-600 hover:text-slate-800 hover:bg-white transition-all"
+                >
+                  <ChevronRight className="w-4 h-4 rotate-180" />
+                  Back
+                </button>
+              )}
               <button
-                onClick={() => setActiveTab('order-form')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${activeTab === 'order-form'
+                onClick={() => handleTabChange('order-form')}
+                className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 ${activeTab === 'order-form'
                     ? 'bg-white text-pink-600 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
                   }`}
@@ -638,8 +776,8 @@ export default function App() {
                 Place Order
               </button>
               <button
-                onClick={() => setActiveTab('dashboard')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 relative ${activeTab === 'dashboard'
+                onClick={() => handleTabChange('dashboard')}
+                className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 relative ${activeTab === 'dashboard'
                     ? 'bg-white text-pink-600 shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
                   }`}
@@ -667,7 +805,7 @@ export default function App() {
               )}
               {isAdmin && (
                 <button
-                  onClick={() => setActiveTab('cake-count')}
+                  onClick={() => handleTabChange('cake-count')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${activeTab === 'cake-count'
                       ? 'bg-gradient-to-r from-pink-600 to-rose-500 text-white shadow-sm'
                       : 'text-pink-600 bg-pink-100 hover:bg-pink-200'
@@ -705,6 +843,44 @@ export default function App() {
         </div>
       )}
 
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-rose-100 p-6 animate-fadeIn">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-2xl bg-rose-100 text-rose-600">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Delete order?</h3>
+                <p className="text-sm text-slate-500">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-slate-700 mb-6">
+              Are you sure you want to delete the order for <span className="font-semibold text-slate-900">{deleteConfirm.customerName}</span>?
+            </p>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteOrder}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 font-medium transition-all shadow-sm"
+              >
+                Delete Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FULL PREVIEW LIGHTBOX */}
       {lightboxImage && (
         <div
@@ -732,881 +908,126 @@ export default function App() {
       )}
 
       {/* VIEW LAYOUT PANEL */}
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-6 sm:py-8">
 
         {/* VIEW 1: CAKE FORM */}
         {activeTab === 'order-form' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* FORM COMPONENT */}
-            <div className="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-rose-100/60 p-6 sm:p-8">
-              <div className="border-b border-rose-100 pb-4 mb-6">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <Cake className="w-5 h-5 text-pink-500" />
-                  Place Your Cake Order
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">Fields marked * are required.</p>
-              </div>
-
-              <form onSubmit={handleSubmitOrder} className="space-y-6">
-
-                {/* 1. ORDER SELECTOR TYPE */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Order Type *</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOrderType('Regular');
-                        setReferenceImage(null);
-                      }}
-                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${orderType === 'Regular'
-                          ? 'bg-rose-50/50 border-pink-500 text-pink-700 ring-2 ring-pink-500/10'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      🍰 Regular Cake
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOrderType('Theme')}
-                      className={`py-3 px-4 rounded-xl font-semibold text-sm border transition-all ${orderType === 'Theme'
-                          ? 'bg-rose-50/50 border-pink-500 text-pink-700 ring-2 ring-pink-500/10'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      ✨ Theme/Designer Cake
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. DATETIME & CONTACT */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-slate-400" />
-                      Customer Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder='Enter Customer Name'
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      Order Date & Time *
-                    </label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={dateTime}
-                      onChange={(e) => setDateTime(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-slate-400" />
-                      Contact Phone No *
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder=""
-                      value={contactNo}
-                      onChange={(e) => setContactNo(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* 3. FLAVORS AND QUANTITY SELECTORS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Choose Cake Flavor *
-                    </label>
-                    <select
-                      required
-                      value={flavor}
-                      onChange={(e) => setFlavor(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 bg-white"
-                    >
-                      <option value="">-- Choose flavor --</option>
-                      {flavors.map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Select Quantity / Size *
-                    </label>
-                    <select
-                      required
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 bg-white"
-                    >
-                      {QUANTITIES.map(q => (
-                        <option key={q.id} value={q.id}>{q.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {quantity === 'custom' && (
-                  <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 animate-fadeIn">
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                      Custom Size Details *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. enter tier, shape, quantity etc"
-                      value={customQtyDetails}
-                      onChange={(e) => setCustomQtyDetails(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                )}
-
-                {/* THEME SPECIFIC BLOCK WITH REFERENCE PHOTO UPLOAD */}
-                {orderType === 'Theme' && (
-                  <div className="bg-pink-50/40 p-5 rounded-2xl border border-pink-100 space-y-4 animate-fadeIn">
-                    <div>
-                      <label className="block text-xs font-bold text-pink-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Theme Design Specifications *
-                      </label>
-                      <textarea
-                        rows="3"
-                        required
-                        placeholder="Specify design, topper specifications, reference sketches, or theme guidelines..."
-                        value={designDetails}
-                        onChange={(e) => setDesignDetails(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                      ></textarea>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-pink-700 uppercase tracking-wider mb-2">
-                        Attached Design Reference Image
-                      </label>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                        <div className="md:col-span-2">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={fileInputRef}
-                            className="hidden"
-                            onChange={handlePhotoUpload}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isCompilingImage}
-                            className="w-full py-4 border-2 border-dashed border-pink-200 hover:border-pink-400 bg-white text-pink-600 font-medium text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-                          >
-                            <Upload className="w-5 h-5 text-pink-400" />
-                            {isCompilingImage ? "Scaling & Compressing File..." : "Attach Image"}
-                          </button>
-                        </div>
-
-                        {/* MINI UPLOAD COMPONENT PREVIEW */}
-                        <div className="flex justify-center">
-                          {referenceImage ? (
-                            <div className="relative group rounded-xl overflow-hidden border border-pink-200 w-24 h-24 bg-slate-50 shadow-sm">
-                              <img src={referenceImage} alt="Reference Preview" className="w-full h-full object-cover" />
-                              <button
-                                type="button"
-                                onClick={() => setReferenceImage(null)}
-                                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="border border-dashed border-slate-200 w-24 h-24 rounded-xl flex flex-col items-center justify-center text-slate-300 text-[10px]">
-                              <Upload className="w-5 h-5 mb-1" />
-                              No Image
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. WISHES / MESSAGE ON CAKE */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-slate-400" />
-                    Wishes Written on Cake (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder='e.g., "Happy 10th Birthday Olive!"'
-                    value={wishes}
-                    onChange={(e) => setWishes(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                  />
-                </div>
-
-                {/* 5. FINANCES */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <IndianRupee className="w-3.5 h-3.5 text-slate-400" />
-                      Total Amount (₹) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      required
-                      step="0.01"
-                      placeholder="0.00"
-                      value={totalAmount}
-                      onChange={(e) =>
-                        setTotalAmount(e.target.value)
-                      }
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <IndianRupee className="w-3.5 h-3.5 text-slate-400" />
-                      Advance Paid (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={advanceAmount}
-                      onChange={(e) => setAdvanceAmount(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                  {(totalAmount !== '' && advanceAmount !== '') && (
-                    <div className="p-4 bg-slate-50 rounded-lg">
-                      {balanceAmount > 0 ? (
-                        <p className="text-red-600 font-bold">Balance Due: ₹{balanceAmount.toFixed(0)}</p>
-                      ) : (
-                        <p className="text-emerald-600 font-bold">Full amount paid!</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-55"
-                >
-                  <Cake className="w-5 h-5" />
-                  {isSubmitting ? 'Saving...' : 'Submit Cake Order'}
-                </button>
-
-              </form>
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 items-start">
+            <div className="xl:col-span-8 w-full">
+              <OrderForm
+                orderType={orderType}
+                setOrderType={setOrderType}
+                dateTime={dateTime}
+                setDateTime={setDateTime}
+                customerName={customerName}
+                setCustomerName={setCustomerName}
+                contactNo={contactNo}
+                setContactNo={setContactNo}
+                flavor={flavor}
+                setFlavor={setFlavor}
+                flavors={flavors}
+                quantity={quantity}
+                setQuantity={setQuantity}
+                customQtyDetails={customQtyDetails}
+                setCustomQtyDetails={setCustomQtyDetails}
+                designDetails={designDetails}
+                setDesignDetails={setDesignDetails}
+                wishes={wishes}
+                setWishes={setWishes}
+                totalAmount={totalAmount}
+                setTotalAmount={setTotalAmount}
+                advanceAmount={advanceAmount}
+                setAdvanceAmount={setAdvanceAmount}
+                balanceAmount={balanceAmount}
+                referenceImage={referenceImage}
+                setReferenceImage={setReferenceImage}
+                handlePhotoUpload={handlePhotoUpload}
+                fileInputRef={fileInputRef}
+                isCompilingImage={isCompilingImage}
+                handleSubmitOrder={handleSubmitOrder}
+                isSubmitting={isSubmitting}
+                quantities={QUANTITIES}
+                isEditingOrder={Boolean(editingOrderId)}
+                onCancelEdit={handleCancelEdit}
+              />
             </div>
+
+            <aside className="xl:col-span-4 w-full">
+              <div className="bg-white rounded-3xl border border-rose-100 shadow-xl p-4 sm:p-5 xl:sticky xl:top-24">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Order Snapshot</h3>
+                <div className="space-y-3">
+                  <InfoChip label="Type" value={orderType} tone={orderType === 'Theme' ? 'amber' : 'rose'} />
+                  <InfoChip label="Flavor" value={flavors.find(f => f.id === flavor)?.name || 'Not selected'} tone="slate" />
+                  <InfoChip label="Quantity" value={QUANTITIES.find(q => q.id === quantity)?.name || quantity} tone="rose" />
+                  <InfoChip label="Balance" value={balanceAmount > 0 ? `₹${balanceAmount.toFixed(0)}` : 'Paid in full'} tone={balanceAmount > 0 ? 'amber' : 'emerald'} />
+                </div>
+                <div className="mt-5 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
+                  <p className="font-semibold text-slate-700 mb-1">Quick reminder</p>
+                  <p>Theme orders require design details and optional reference images for smoother kitchen prep.</p>
+                </div>
+              </div>
+            </aside>
           </div>
         )}
 
         {/* VIEW 2: KITCHEN TELEMETRY DASHBOARD */}
         {activeTab === 'dashboard' && (
-          <div className="space-y-8 animate-fadeIn">
-
-            {!isAdmin ? (
-              <div className="max-w-md mx-auto my-12 bg-white rounded-3xl shadow-xl border border-rose-100 p-8 text-center">
-                <div className="w-16 h-16 bg-rose-50 text-pink-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100">
-                  <Lock className="w-8 h-8" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-800">Admin Authentication Required</h3>
-                <p className="text-sm text-slate-400 mt-2 mb-6">
-                  Only authorized Users can view live Dashboard.
-                </p>
-
-                <form onSubmit={handleAdminVerify} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-left flex items-center gap-1.5">
-                      <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-                      Enter Secure Passcode
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="password"
-                      value={passcodeInput}
-                      onChange={(e) => setPasscodeInput(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-center tracking-widest text-lg font-bold focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-
-                  {passcodeError && (
-                    <p className="text-xs text-rose-500 font-semibold flex items-center justify-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      {passcodeError}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
-                  >
-                    <Unlock className="w-4 h-4" />
-                    Unlock Dashboard
-                  </button>
-                </form>
-              </div>
-            ) : (
-
-              // ACTIVE METRIC METALS
-              <div className="space-y-8">
-
-                <div className="bg-white/80 backdrop-blur rounded-3xl border border-rose-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                  <div className="space-y-2">
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                      <LayoutDashboard className="w-6 h-6 text-pink-500" />
-                      Orders Dashboard
-                    </h2>
-                    <p className="text-xs text-slate-400">Viewing schedule summary logs.</p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-4 items-end">
-                    {/* Interactive Date Selector Container */}
-                    <div className="bg-pink-50/50 border border-pink-100/80 px-4 py-2.5 rounded-2xl flex flex-col gap-1.5 shadow-sm">
-                      <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        Select Delivery Date
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="date"
-                          value={filterDate}
-                          onChange={(e) => setFilterDate(e.target.value)}
-                          className="px-3 py-1 bg-white border border-rose-200 text-slate-700 text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400"
-                        />
-                        {/* Only show "Today" shortcut if we aren't currently viewing today */}
-                        {filterDate !== new Date().toLocaleDateString('en-CA') && (
-                          <button
-                            type="button"
-                            onClick={handleResetToToday}
-                            className="bg-pink-100 hover:bg-pink-200 text-pink-700 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors"
-                          >
-                            Today
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Metric Boxes */}
-                    <div className="bg-rose-100/50 border border-rose-100/80 px-4 py-2.5 rounded-2xl text-center min-w-[100px]">
-                      <span className="block text-[10px] text-rose-500 font-bold uppercase tracking-wider">Target Date Orders</span>
-                      <span className="text-2xl font-black text-rose-600">{analytics.selectedDateCount}</span>
-                    </div>
-                    <div className="bg-amber-100/50 border border-amber-100/80 px-4 py-2.5 rounded-2xl text-center min-w-[100px]">
-                      <span className="block text-[10px] text-amber-600 font-bold uppercase tracking-wider font-semibold">All-Time Orders</span>
-                      <span className="text-2xl font-black text-amber-700">{analytics.totalAllTimeOrders}</span>
-                    </div>
-                  </div>
-                </div>
-
-
-                {/* PREP SCHEDULE TABLE */}
-                  <div className="bg-white rounded-3xl border border-rose-100/60 shadow-lg overflow-hidden">
-                    <div className="p-6 bg-slate-50/60 border-b border-rose-100/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                      <div>
-                        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                          <Clock className="w-5 h-5 text-pink-500" />
-                          Scheduled Cakes for {new Date(filterDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                        </h3>
-                      </div>
-                      {/* Action Button: Print to PDF */}
-                      <button
-                        onClick={() => handlePrintOnlyTable('printable-kitchen-table')}
-                        className="no-print bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-semibold py-2 px-4 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 text-xs self-end sm:self-auto"
-                      >
-                        <Printer className="w-4 h-4" />
-                        Print to PDF
-                      </button>
-                    </div>
-
-
-
-                    {analytics.selectedDateCount === 0 ? (
-                      <div className="py-16 text-center text-slate-400 text-sm flex flex-col justify-center items-center gap-2">
-                        <span>No cake orders scheduled for {filterDate}.</span>
-                        <button
-                          onClick={handleResetToToday}
-                          className="text-pink-600 font-bold hover:underline text-xs"
-                        >
-                          Reset back to today
-                        </button>
-                      </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse" id="printable-kitchen-table">
-                        <thead>
-                          <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                            <th className="py-2 px-4">Due Time</th>
-                            <th className="py-4 px-6">Cake details</th>
-                            <th className="py-4 px-6">Writing</th>
-                            <th className="py-4 px-6">Customer Name</th>
-                            <th className="py-4 px-6">Contact Phone</th>
-                            <th className="py-4 px-6 text-right">Amount (Total/ Paid / Due)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {analytics.todayOrders.map((order, i) => {
-                            const flavorName = flavors.find(f => f.id === order.flavor)?.name || order.flavor;
-                            const qtyLabel = QUANTITIES.find(q => q.id === order.quantity)?.name.split(' (')[0] || order.quantity;
-
-                            const [datePart, timePart] = order.date_time.split('T');
-                            const [h24, m] = timePart.split(':');
-
-                            const h = parseInt(h24, 10);
-                            const ampm = h >= 12 ? 'PM' : 'AM';
-                            const h12 = h % 12 || 12;
-
-                            const orderTime = `${h12.toString().padStart(2, '0')}:${m} ${ampm}`;
-
-                            return (
-                              <tr key={order.id || i} className="hover:bg-slate-50/70 transition-colors text-sm">
-
-                                <td className="py-2 px-4 font-bold text-pink-600 whitespace-nowrap">
-                                  <span className="inline-flex items-center gap-1.5 bg-pink-50 px-2.5 py-1 rounded-lg">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    {orderTime}
-                                  </span>
-                                </td>
-
-                                <td className="py-4 px-6 whitespace-nowrap">
-                                  <div>
-                                    <div className="font-semibold text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
-                                      {flavorName}
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${order.order_type === 'Theme'
-                                          ? 'bg-amber-100 text-amber-800'
-                                          : 'bg-indigo-100 text-indigo-800'
-                                        }`}>
-                                        {order.order_type}
-                                      </span>
-                                    </div>
-                                    <div className="text-xs text-slate-400 mt-0.5 capitalize">
-                                      Size: {qtyLabel} {order.custom_qty_details ? `(${order.custom_qty_details})` : ''}
-                                    </div>
-                                  </div>
-                                </td>
-
-                                <td className="py-4 px-6 max-w-sm">
-                                  <div className="space-y-1.5">
-                                    {order.wishes && (
-                                      <div className="text-xs text-slate-700 bg-amber-50 border border-amber-100/50 px-2.5 py-1.5 rounded-lg">
-                                        <span className="font-semibold text-amber-800 text-[10px] block uppercase">Wishes on Cake:</span>
-                                        "{order.wishes}"
-                                      </div>
-                                    )}
-                                    {order.order_type === 'Theme' && (
-                                      <div className="text-xs text-slate-500 italic bg-rose-50/30 border border-rose-100/50 px-2.5 py-1.5 rounded-lg flex flex-col md:flex-row gap-3 items-start justify-between">
-                                        <div>
-                                          <span className="font-semibold text-pink-700 text-[10px] not-italic block uppercase">Theme Directives:</span>
-                                          {order.design_details || "No specifications provided"}
-                                        </div>
-
-                                        {/* DATABASE IMAGE MINI PREVIEW IN PREP PIPELINE */}
-                                        {order.image_data && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setLightboxImage(order.image_data)}
-                                            className="relative flex-shrink-0 group w-12 h-12 rounded-lg overflow-hidden border border-rose-200 shadow-sm"
-                                          >
-                                            <img src={order.image_data} alt="Ref photo" className="w-full h-full object-cover" />
-                                            <span className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center text-[8px] text-white font-bold uppercase">View</span>
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-
-                                <td className="py-4 px-6 whitespace-nowrap">
-                                  <div href={`tel:${order.customer_name}`} className="text-slate-600 hover:text-pink-600 font-medium inline-flex items-center gap-1 text-xs">
-                                    <User2Icon className="w-3 h-3 text-slate-400" />
-                                    {order.customer_name}
-                                  </div>
-                                </td>
-
-                                <td className="py-4 px-6 whitespace-nowrap">
-                                  <a href={`tel:${order.contact_no}`} className="text-slate-600 hover:text-pink-600 font-medium inline-flex items-center gap-1 text-xs">
-                                    <Phone className="w-3 h-3 text-slate-400" />
-                                    {order.contact_no}
-                                  </a>
-                                </td>
-                            
-
-                                <td className="py-4 px-6 text-right whitespace-nowrap">
-                                  <div className="font-mono text-xs">
-                                    <div className="font-mono text-xs">Total: ₹{Number(order.total_amount).toFixed(2)}</div>
-                                    <div className="text-emerald-600 font-semibold">Adv: ₹{Number(order.advance_amount).toFixed(2)}</div>
-                                    <div className="text-slate-400">Due: ₹{Number(order.balance_amount).toFixed(2)}</div>
-                                  </div>
-                                </td>
-
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
-                  {/* PORTION & SIZE GROUPED BREAKDOWN BY ACTIVE FLAVOR TODAY */}
-                  <div className="bg-white p-6 sm:p-8 rounded-3xl border border-rose-100/60 shadow-md">
-                    <div className="flex items-center gap-2 mb-6 border-b border-rose-50 pb-3">
-                      <BarChart3 className="w-5 h-5 text-amber-500" />
-                      <h3 className="font-bold text-slate-800 text-lg">Today's Orders & Size Breakdown per Flavor</h3>
-                    </div>
-
-                    {analytics.todayCount === 0 ? (
-                      <div className="py-12 text-center text-slate-400 text-sm">
-                        No orders registered for today ({new Date().toLocaleDateString('en-CA')}).
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {analytics.todaySummaryData.map((item) => (
-                          <div key={item.id} className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-bold text-slate-800 text-sm">{item.name}</span>
-                              <span className="bg-pink-100 text-pink-700 text-xs font-extrabold px-2 py-0.5 rounded-full">
-                                {item.sizes.total} order(s)
-                              </span>
-                            </div>
-
-                            {/* Size badge pills */}
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {item.sizes.medium > 0 && (
-                                <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-indigo-100">
-                                  Medium: {item.sizes.medium}
-                                </span>
-                              )}
-                              {item.sizes.large > 0 && (
-                                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-100">
-                                  Large: {item.sizes.large}
-                                </span>
-                              )}
-                              {item.sizes.custom > 0 && (
-                                <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-amber-100">
-                                  Custom: {item.sizes.custom}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-
-              </div>
-            )}
-
-          </div>
+          <DashboardView
+            isAdmin={isAdmin}
+            filterDate={filterDate}
+            setFilterDate={setFilterDate}
+            handleResetToToday={handleResetToToday}
+            analytics={analytics}
+            dashboardSummary={dashboardSummary}
+            flavors={flavors}
+            onPrint={handlePrintOnlyTable}
+            setLightboxImage={setLightboxImage}
+            onEditOrder={populateOrderForEdit}
+            onDeleteOrder={handleDeleteOrder}
+            passcodeInput={passcodeInput}
+            setPasscodeInput={setPasscodeInput}
+            passcodeError={passcodeError}
+            handleAdminVerify={handleAdminVerify}
+            AdminAuthCard={AdminAuthCard}
+            quantities={QUANTITIES}
+          />
         )}
 
         {/* VIEW 3: MANAGE FLAVORS (ADMIN ONLY) */}
         {activeTab === 'manage-flavors' && isAdmin && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fadeIn">
-
-            {/* ADD FLAVOR FORM */}
-            <div className="lg:col-span-4 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
-              <div className="border-b border-rose-100 pb-3 mb-5">
-                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                  <PlusCircle className="w-5 h-5 text-pink-500" />
-                  Add New Flavor
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">Define metadata and standard pricing columns.</p>
-              </div>
-
-              <form onSubmit={handleAddFlavor} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Flavor Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Pistachio Cardamom"
-                    value={newFlavorName}
-                    onChange={handleFlavorNameChange}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <IndianRupee className="w-3 h-3" />
-                      Medium Price (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 550"
-                      value={newFlavorPriceMedium}
-                      onChange={(e) => setNewFlavorPriceMedium(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <IndianRupee className="w-3 h-3" />
-                      Large Price (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 1000"
-                      value={newFlavorPriceLarge}
-                      onChange={(e) => setNewFlavorPriceLarge(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingFlavor}
-                  className="w-full mt-2 py-3 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                >
-                  <Layers className="w-4 h-4" />
-                  {isSavingFlavor ? 'Saving...' : 'Save Flavor'}
-                </button>
-              </form>
-            </div>
-
-            {/* FLAVORS LIST TABLE */}
-            <div className="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
-              <div className="border-b border-rose-100 pb-3 mb-5 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                    <Tag className="w-5 h-5 text-pink-500" />
-                    Available Flavors List ({flavors.length})
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">These directly populate the placing order drop-down menu.</p>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <th className="py-3 px-4">Flavor Name</th>
-                      <th className="py-3 px-4">Slug ID Key</th>
-                      <th className="py-3 px-4 text-right">Medium Price</th>
-                      <th className="py-3 px-4 text-right">Large Price</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {flavors.map((flv) => (
-                      <tr key={flv.id} className="hover:bg-slate-50/70 transition-colors text-sm">
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.name}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <code className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-mono">
-                            {flv.id}
-                          </code>
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-semibold text-slate-700">
-                          {flv.price_medium ? `₹${flv.price_medium}` : '—'}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-semibold text-slate-700">
-                          {flv.price_large ? `₹${flv.price_large}` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                    {flavors.length === 0 && (
-                      <tr>
-                        <td colSpan="5" className="py-8 text-center text-slate-400 text-sm">
-                          No flavors added yet. Use the form on the left to add flavors!
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
+          <FlavorManager
+            flavors={flavors}
+            newFlavorName={newFlavorName}
+            setNewFlavorName={setNewFlavorName}
+            newFlavorPriceMedium={newFlavorPriceMedium}
+            setNewFlavorPriceMedium={setNewFlavorPriceMedium}
+            newFlavorPriceLarge={newFlavorPriceLarge}
+            setNewFlavorPriceLarge={setNewFlavorPriceLarge}
+            handleFlavorNameChange={handleFlavorNameChange}
+            handleAddFlavor={handleAddFlavor}
+            isSavingFlavor={isSavingFlavor}
+          />
         )}
 
         {/* VIEW 3: MANAGE FLAVORS (ADMIN ONLY) */}
         {activeTab === 'cake-count' && isAdmin && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fadeIn">
-
-            {/* ADD FLAVOR FORM */}
-            <div className="lg:col-span-4 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
-              <div className="border-b border-rose-100 pb-3 mb-5">
-                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                  <PlusCircle className="w-5 h-5 text-pink-500" />
-                  Add Target Cakes List
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">Add cakes to be completed in this session.</p>
-              </div>
-
-              <form onSubmit={handleTarget} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Flavor Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. White Forest"
-                    value={flavorNameForTarget}
-                    onChange={(e) => setFlavorNameForTarget(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      Kg
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Enter in Kgs"
-                      value={kgForTarget}
-                      onChange={(e) => setKgForTarget(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      Count
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Enter count"
-                      value={countForTarget}
-                      onChange={(e) => setCountForTarget(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Select Type
-                    </label>
-                    <select
-                      required
-                      value={typeForTarget}
-                      onChange={(e) => setTypeForTarget(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 bg-white"
-                    >
-                      <option value="" disabled hidden>-- Select an option --</option>
-                      {TARGET_TYPE.map(q => (
-                        <option key={q.id} value={q.id}>{q.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      Remarks
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Remarks if any"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-pink-500 focus:ring focus:ring-pink-500/20 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingTarget}
-                  className="w-full mt-2 py-3 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                >
-                  <Layers className="w-4 h-4" />
-                  {isSavingTarget ? 'Saving...' : 'Save Target'}
-                </button>
-              </form>
-            </div>
-
-            {/* FLAVORS LIST TABLE */}
-            <div className="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-rose-100 p-6">
-              <div className="border-b border-rose-100 pb-3 mb-5 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                    <Tag className="w-5 h-5 text-pink-500" />
-                    Targets For Session ({targets.length})
-                  </h3>
-                </div>
-                <button
-                        onClick={() => handlePrintOnlyTable('target-table')}
-                        className="no-print bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white font-semibold py-2 px-4 rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 text-xs self-end sm:self-auto"
-                      >
-                        <Printer className="w-4 h-4" />
-                        Print to PDF
-                      </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" id="target-table" >
-                  <thead>
-                    <tr className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <th className="py-3 px-4">Flavor Name</th>
-                      <th className="py-3 px-4">Type</th>
-                      <th className="py-3 px-4">Kg</th>
-                      <th className="py-3 px-4">Count</th>
-                      <th className="py-3 px-4">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {targets.map((flv) => (
-                      <tr key={flv.id} className="hover:bg-slate-50/70 transition-colors text-sm">
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.flavor}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.type}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.kg}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.count}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {flv.remarks}
-                        </td>
-                        
-                      </tr>
-                    ))}
-                    {targets.length === 0 && (
-                      <tr>
-                        <td colSpan="5" className="py-8 text-center text-slate-400 text-sm">
-                          No flavors added yet. Use the form on the left to add flavors!
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
+          <CakeTargetManager
+            targets={targets}
+            flavorNameForTarget={flavorNameForTarget}
+            setFlavorNameForTarget={setFlavorNameForTarget}
+            kgForTarget={kgForTarget}
+            setKgForTarget={setKgForTarget}
+            countForTarget={countForTarget}
+            setCountForTarget={setCountForTarget}
+            typeForTarget={typeForTarget}
+            setTypeForTarget={setTypeForTarget}
+            targetTypes={TARGET_TYPE}
+            remarks={remarks}
+            setRemarks={setRemarks}
+            handleTarget={handleTarget}
+            isSavingTarget={isSavingTarget}
+            onPrint={handlePrintOnlyTable}
+          />
         )}
 
       </main>
