@@ -21,19 +21,12 @@ export function DashboardView({
   passcodeError,
   handleAdminVerify,
   AdminAuthCard,
-  quantities
+  quantities,
+  userRole,
+  userLabel,
+  dashboardView,
+  setDashboardView
 }) {
-  if (!isAdmin) {
-    return (
-      <AdminAuthCard
-        passcodeInput={passcodeInput}
-        setPasscodeInput={setPasscodeInput}
-        passcodeError={passcodeError}
-        onSubmit={handleAdminVerify}
-      />
-    );
-  }
-
   return (
     <div className="space-y-8 animate-fadeIn">
       <div className="bg-white/80 backdrop-blur rounded-3xl border border-rose-100 p-6 shadow-sm">
@@ -41,12 +34,30 @@ export function DashboardView({
           <div className="space-y-2">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
               <LayoutDashboard className="w-6 h-6 text-pink-500" />
-              Orders Dashboard
+              Dashboard
             </h2>
-            <p className="text-xs text-slate-400">Viewing schedule summary logs.</p>
+            <p className="text-xs text-slate-400">
+              {userLabel ? `${userLabel} view` : 'Viewing schedule summary logs.'}
+            </p>
           </div>
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 items-stretch sm:items-end w-full sm:w-auto">
+            <div className="inline-flex rounded-2xl border border-pink-100 bg-pink-50 p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setDashboardView('orders')}
+                className={`px-3 py-2 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-colors ${dashboardView === 'orders' ? 'bg-white text-pink-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Order Dashboard
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView('inventory')}
+                className={`px-3 py-2 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-colors ${dashboardView === 'inventory' ? 'bg-white text-pink-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Inventory Dashboard
+              </button>
+            </div>
             <div className="bg-pink-50/50 border border-pink-100/80 px-3 sm:px-4 py-2.5 rounded-2xl flex flex-col gap-1.5 shadow-sm w-full sm:w-auto">
               <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
